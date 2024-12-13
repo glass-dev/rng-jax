@@ -2,7 +2,7 @@
 NumPy random number generator API for JAX.
 """
 
-from typing import Self, TypeAlias
+from typing import Literal, Self, TypeAlias
 
 from jax import Array
 from jax.dtypes import issubdtype, prng_key
@@ -18,6 +18,7 @@ from jax.random import (
     f,
     gamma,
     key,
+    multivariate_normal,
     normal,
     permutation,
     randint,
@@ -68,7 +69,7 @@ class JRNG:
         self.key = key(seed, impl=impl)
 
     @property
-    def __next(self) -> Array:
+    def __key(self) -> Array:
         """
         Return next key for sampling while updating internal state.
         """
@@ -99,14 +100,14 @@ class JRNG:
             low, high = 0, low
         if endpoint:
             high = high + 1
-        return randint(self.__next, _s(size), low, high, dtype)
+        return randint(self.__key, _s(size), low, high, dtype)
 
     def random(self, size: Size = None, dtype: DTypeLike = float) -> Array:
         """
         Return random floats in the half-open interval [0.0, 1.0).
         """
         self.key, key = split(self.key)
-        return uniform(self.__next, _s(size), dtype)
+        return uniform(self.__key, _s(size), dtype)
 
     def choice(
         self,
@@ -119,56 +120,56 @@ class JRNG:
         """
         Generates a random sample from a given array.
         """
-        return choice(self.__next, a, _s(size), replace, p, axis)
+        return choice(self.__key, a, _s(size), replace, p, axis)
 
     def bytes(self, length: int) -> bytes:
         """
         Return random bytes.
         """
         shape = (length // uint8.dtype.itemsize,)
-        return bits(self.__next, shape, uint8).tobytes()
+        return bits(self.__key, shape, uint8).tobytes()
 
     def permutation(self, x: int | Array, axis: int = 0) -> Array:
         """
         Randomly permute a sequence, or return a permuted range.
         """
-        return permutation(self.__next, x, axis, False)
+        return permutation(self.__key, x, axis, False)
 
     def beta(self, a: RealArray, b: RealArray, size: Size = None) -> Array:
         """
         Draw samples from a Beta distribution.
         """
-        return beta(self.__next, a, b, _s(size))
+        return beta(self.__key, a, b, _s(size))
 
     def binomial(self, n: RealArray, p: RealArray, size: Size = None) -> Array:
         """
         Draw samples from a binomial distribution.
         """
-        return binomial(self.__next, n, p, _s(size))
+        return binomial(self.__key, n, p, _s(size))
 
     def chisquare(self, df: RealArray, size: Size = None) -> Array:
         """
         Draw samples from a chi-square distribution.
         """
-        return chisquare(self.__next, df, _s(size))
+        return chisquare(self.__key, df, _s(size))
 
     def dirichlet(self, alpha: RealArray, size: Size = None) -> Array:
         """
         Draw samples from the Dirichlet distribution.
         """
-        return dirichlet(self.__next, alpha, _s(size))
+        return dirichlet(self.__key, alpha, _s(size))
 
     def exponential(self, scale: RealArray = 1.0, size: Size = None) -> Array:
         """
         Draw samples from an exponential distribution.
         """
-        return array(scale) * exponential(self.__next, _s(size, scale))
+        return array(scale) * exponential(self.__key, _s(size, scale))
 
     def f(self, dfnum: RealArray, dfden: RealArray, size: Size = None) -> Array:
         """
         Draw samples from an F distribution.
         """
-        return f(self.__next, dfnum, dfden, _s(size))
+        return f(self.__key, dfnum, dfden, _s(size))
 
     def gamma(
         self,
@@ -179,7 +180,7 @@ class JRNG:
         """
         Draw samples from a Gamma distribution.
         """
-        return array(scale) * gamma(self.__next, a, _s(size, a, scale))
+        return array(scale) * gamma(self.__key, a, _s(size, a, scale))
 
     # geometric(p[, size])
     # Draw samples from the geometric distribution.
@@ -208,8 +209,24 @@ class JRNG:
     # multivariate_hypergeometric(colors, nsample)
     # Generate variates from a multivariate hypergeometric distribution.
 
-    # multivariate_normal(mean, cov[, size, ...])
-    # Draw random samples from a multivariate normal distribution.
+    def multivariate_normal(
+        self,
+        mean: RealArray,
+        cov: RealArray,
+        size: Size = None,
+        *,
+        method: Literal["svd", "eigh", "cholesky"] = "svd",
+    ) -> Array:
+        """
+        Draw random samples from a multivariate normal distribution.
+        """
+        return multivariate_normal(
+            self.__key,
+            mean,
+            cov,
+            shape=_s(size),
+            method=method,
+        )
 
     # negative_binomial(n, p[, size])
     # Draw samples from a negative binomial distribution.
@@ -248,7 +265,7 @@ class JRNG:
         """
         Draw samples from a standard Normal distribution (mean=0, stdev=1).
         """
-        return normal(self.__next, _s(size), dtype)
+        return normal(self.__key, _s(size), dtype)
 
     # standard_t(df[, size])
     # Draw samples from a standard Student's t distribution with df degrees of freedom.
