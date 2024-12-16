@@ -25,6 +25,7 @@ from jax.random import (
     split,
     uniform,
 )
+from jax.tree_util import register_pytree_node_class
 from jax.typing import ArrayLike, DTypeLike
 
 
@@ -46,6 +47,7 @@ def _s(size: Size, *bcast: ArrayLike) -> tuple[int, ...]:
     return size
 
 
+@register_pytree_node_class
 class JRNG:
     """
     Wrapper class for JAX random number generation.
@@ -75,6 +77,20 @@ class JRNG:
         """
         self.key, key = split(self.key)
         return key
+
+    def tree_flatten(self) -> tuple[tuple[Array], None]:
+        """
+        Return pytree representation of JRNG instance.
+        """
+        return (self.__key,), None
+
+    @classmethod
+    def tree_unflatten(cls, aux_data: None, children: tuple[Array]) -> Self:
+        """
+        Construct JRNG instance from pytree representation.
+        """
+        (key,) = children
+        return cls.from_key(key)
 
     def spawn(self, n: int) -> list[Self]:
         """
