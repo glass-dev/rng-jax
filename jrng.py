@@ -53,6 +53,8 @@ class JRNG:
     Wrapper class for JAX random number generation.
     """
 
+    __slots__ = ("key",)
+
     @classmethod
     def from_key(cls, key: Array) -> Self:
         """
@@ -90,7 +92,9 @@ class JRNG:
         Construct JRNG instance from pytree representation.
         """
         (key,) = children
-        return cls.from_key(key)
+        rng = object.__new__(cls)
+        rng.key = key
+        return rng
 
     def spawn(self, n: int) -> list[Self]:
         """
