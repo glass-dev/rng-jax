@@ -1,7 +1,8 @@
 """
-NumPy random number generator API for JAX.
+JAX random number generation as a NumPy generator.
 """
 
+import math
 from typing import Literal, Self, TypeAlias
 
 from jax import Array
@@ -25,7 +26,6 @@ from jax.random import (
     split,
     uniform,
 )
-from jax.tree_util import register_pytree_node_class
 from jax.typing import ArrayLike, DTypeLike
 
 
@@ -47,13 +47,13 @@ def _s(size: Size, *bcast: ArrayLike) -> tuple[int, ...]:
     return size
 
 
-@register_pytree_node_class
-class JRNG:
+class Generator:
     """
     Wrapper class for JAX random number generation.
     """
 
-    __slots__ = ("key",)
+    __slots__ = ("_key",)
+    _key: Array
 
     @classmethod
     def from_key(cls, key: Array) -> Self:
@@ -63,44 +63,37 @@ class JRNG:
         if not isinstance(key, Array) or not issubdtype(key.dtype, prng_key):
             raise ValueError("not a random key")
         rng = object.__new__(cls)
-        rng.key = key
+        rng._key = key
         return rng
 
     def __init__(self, seed: int | ArrayLike, *, impl: str | None = None) -> None:
         """
         Create a wrapper instance with a new key.
         """
-        self.key = key(seed, impl=impl)
+        self._key = key(seed, impl=impl)
 
     @property
     def __key(self) -> Array:
         """
         Return next key for sampling while updating internal state.
         """
-        self.key, key = split(self.key)
+        self._key, key = split(self._key)
         return key
 
-    def tree_flatten(self) -> tuple[tuple[Array], None]:
+    def key(self, size: Size = None) -> Array:
         """
-        Return pytree representation of JRNG instance.
+        Return random key, advancing internal state.
         """
-        return (self.__key,), None
+        shape = _s(size)
+        keys = split(self._key, 1 + math.prod(shape))
+        self._key = keys[0]
+        return keys[1:].reshape(shape)
 
-    @classmethod
-    def tree_unflatten(cls, aux_data: None, children: tuple[Array]) -> Self:
-        """
-        Construct JRNG instance from pytree representation.
-        """
-        (key,) = children
-        rng = object.__new__(cls)
-        rng.key = key
-        return rng
-
-    def spawn(self, n: int) -> list[Self]:
+    def spawn(self, n_children: int) -> list[Self]:
         """
         Create new independent child generators.
         """
-        self.key, *subkeys = split(self.key, num=n + 1)
+        self._key, *subkeys = split(self._key, num=n_children + 1)
         return list(map(self.from_key, subkeys))
 
     def integers(
@@ -126,7 +119,7 @@ class JRNG:
         """
         Return random floats in the half-open interval [0.0, 1.0).
         """
-        self.key, key = split(self.key)
+        self._key, key = split(self._key)
         return uniform(self.__key, _s(size), dtype)
 
     def choice(
