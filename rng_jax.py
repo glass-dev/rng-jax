@@ -3,6 +3,7 @@ JAX random number generation as a NumPy generator.
 """
 
 import math
+from threading import Lock
 from typing import Literal, Self, TypeAlias
 
 from jax import Array
@@ -52,8 +53,9 @@ class Generator:
     Wrapper class for JAX random number generation.
     """
 
-    __slots__ = ("_key",)
-    _key: Array
+    __slots__ = ("key", "lock")
+    key: Array
+    lock: Lock
 
     @classmethod
     def from_key(cls, key: Array) -> Self:
@@ -63,38 +65,43 @@ class Generator:
         if not isinstance(key, Array) or not issubdtype(key.dtype, prng_key):
             raise ValueError("not a random key")
         rng = object.__new__(cls)
-        rng._key = key
+        rng.key = key
+        rng.lock = Lock()
         return rng
 
     def __init__(self, seed: int | ArrayLike, *, impl: str | None = None) -> None:
         """
         Create a wrapper instance with a new key.
         """
-        self._key = key(seed, impl=impl)
+        self.key = key(seed, impl=impl)
+        self.lock = Lock()
 
     @property
     def __key(self) -> Array:
         """
         Return next key for sampling while updating internal state.
         """
-        self._key, key = split(self._key)
+        with self.lock:
+            self.key, key = split(self.key)
         return key
 
-    def key(self, size: Size = None) -> Array:
+    def split(self, size: Size = None) -> Array:
         """
-        Return random key, advancing internal state.
+        Split random key.
         """
         shape = _s(size)
-        keys = split(self._key, 1 + math.prod(shape))
-        self._key = keys[0]
+        with self.lock:
+            keys = split(self.key, 1 + math.prod(shape))
+            self.key = keys[0]
         return keys[1:].reshape(shape)
 
     def spawn(self, n_children: int) -> list[Self]:
         """
         Create new independent child generators.
         """
-        self._key, *subkeys = split(self._key, num=n_children + 1)
-        return list(map(self.from_key, subkeys))
+        with self.lock:
+            self.key, *keys = split(self.key, num=n_children + 1)
+        return list(map(self.from_key, keys))
 
     def integers(
         self,
@@ -119,7 +126,6 @@ class Generator:
         """
         Return random floats in the half-open interval [0.0, 1.0).
         """
-        self._key, key = split(self._key)
         return uniform(self.__key, _s(size), dtype)
 
     def choice(
